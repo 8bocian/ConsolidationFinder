@@ -91,7 +91,7 @@ def detect_consolidation(candles_range):
     mean_bottom = np.mean(bottoms['Peak'])
 
     diff = mean_top - mean_bottom
-    g = diff/2000
+    g = diff/4000
 
 
     top_border_min = mean_top * (1 - (g / 100))
