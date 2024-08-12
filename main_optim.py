@@ -5,47 +5,30 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import mplfinance as mpf
+import os
 
+directory = "consolidations_new"
 
-# def check_reversal(candles_range):
-#     # Calculate the necessary booleans directly
-#     previous_close = candles_range['Close'].shift(1)
-#     previous_open = candles_range['Open'].shift(1)
-#
-#     current_close = candles_range['Close']
-#     current_open = candles_range['Open']
-#
-#     # Determine the color of the current and previous candles
-#     is_previous_green = previous_close > previous_open
-#     is_current_green = current_close > current_open
-#
-#     # Check for reversal (change in candle color)
-#     is_reversal = is_previous_green != is_current_green
-#
-#     # Determine peak prices based on the direction of the previous candle
-#     peak_prices = np.where(is_previous_green,
-#                            candles_range['High'].shift(1),
-#                            candles_range['Low'].shift(1))
-#     return is_reversal, peak_prices
+# Check if the directory exists
+if not os.path.exists(directory):
+    # Create the directory
+    os.makedirs(directory)
+
 def check_reversal(candles_range):
     open_prices = candles_range['Open'].values
     close_prices = candles_range['Close'].values
     high_prices = candles_range['High'].values
     low_prices = candles_range['Low'].values
 
-    # Calculate previous and current candle colors
     is_previous_green = close_prices[:-1] > open_prices[:-1]
     is_current_green = close_prices[1:] > open_prices[1:]
 
-    # Detect reversals
     is_reversal = is_previous_green != is_current_green
 
-    # Calculate peak prices
     peak_prices = np.where(is_previous_green,
                            high_prices[1:],
                            low_prices[1:])
 
-    # Apply the reversal mask to get only the relevant dates and peak prices
     peaks = pd.DataFrame({
         'Date': candles_range['Date'].values[1:][is_reversal],
         'Peak': peak_prices[is_reversal]
@@ -162,18 +145,13 @@ for idx in range(0, len(df), 1):
     detection_time = 0
     range_extraction_time = 0
     for i in range(min_window_width, max_window_width, 1):
-        t1 = time.time()
         candles_range = df.loc[idx:idx + i].copy()
         candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
         candles_range.reset_index(inplace=True)
-        range_extraction_time += time.time() - t1
 
-        t1 = time.time()
         grouped_peaks, found, \
         bottom_border_min, mean_bottom, bottom_border_max, \
         top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
-        detection_time += time.time() - t1
-        # quit()
         if found:
             found_in_window = True
             if len(previous_consolidation_dates) < 2:
@@ -181,10 +159,6 @@ for idx in range(0, len(df), 1):
             else:
                 previous_consolidation_dates[-1] = (idx, i)
 
-    print(
-        "DET", detection_time,
-        "EXTR", range_extraction_time
-    )
     if found_in_window == False and len(previous_consolidation_dates) != 0:
         consolidation_start = previous_consolidation_dates[0][0]
         consolidation_end = previous_consolidation_dates[-1][0] + previous_consolidation_dates[-1][-1]
