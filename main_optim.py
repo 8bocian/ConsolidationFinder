@@ -15,24 +15,19 @@ if not os.path.exists(directory):
     os.makedirs(directory)
 
 def check_reversal(candles_range):
-    open_prices = candles_range['Open'].values
-    close_prices = candles_range['Close'].values
-    high_prices = candles_range['High'].values
-    low_prices = candles_range['Low'].values
-
-    is_previous_green = close_prices[:-1] > open_prices[:-1]
-    is_current_green = close_prices[1:] > open_prices[1:]
-
-    is_reversal = is_previous_green != is_current_green
-
-    peak_prices = np.where(is_previous_green,
-                           high_prices[1:],
-                           low_prices[1:])
-
-    peaks = pd.DataFrame({
-        'Date': candles_range['Date'].values[1:][is_reversal],
-        'Peak': peak_prices[is_reversal]
-    })
+    peaks = []
+    is_previous_green = None
+    for idx, candle in candles_range.iterrows():
+        is_current_green = candle['Close'] > candle['Open']
+        if is_previous_green is None:
+            peaks.append((candle['Date'], candle['Open']))
+        elif idx == len(candles_range) - 1:
+            peaks.append((candle['Date'], candle['Close']))
+        else:
+            if is_previous_green != is_current_green:
+                peaks.append((candle['Date'], candle['Open']))
+        is_previous_green = is_current_green
+    peaks = pd.DataFrame(columns=['Date', 'Peak'], data=peaks)
 
     return peaks
 
@@ -65,7 +60,7 @@ def values_in_range(values, lower_border, upper_border):
 
 
 def detect_consolidation(candles_range):
-    peaks = check_reversal(candles_range[1:])
+    peaks = check_reversal(candles_range)
     peaks['Order'] = range(len(peaks))
 
     top = peaks['Peak'].max()
@@ -123,13 +118,13 @@ def overlaps(list1, list2):
 
 
 class Trade:
-    def __init__(self, entry_price, stop_loss, take_profit, date, size=100):
+    def __init__(self, entry_price, stop_loss, take_profit, date, size=10000):
         self.size = size
         self.entry_price = entry_price
         self.stop_loss = stop_loss
         self.take_profit = take_profit
         self.type = "LONG" if stop_loss < entry_price else "SHORT"
-        # print(f"{self.type} TRADE_OPENED AT {entry_price} ON {date}")
+        print(f"{self.type} TRADE_OPENED AT {entry_price} ON {date}")
         self.open_date = date
         self.percentage_loss = 1 - abs(entry_price - stop_loss) / entry_price
         self.percentage_profit = 1 + abs(entry_price - take_profit) / entry_price
@@ -140,18 +135,19 @@ class Trade:
     def check_trade(self, current_candle):
         # if self.type == "LONG" and self.open_date.minute == 32 and self.open_date.second == 15:
         #     print(current_candle['Low'], self.stop_loss, current_candle['High'])
-
         if self.is_in_game:
             if type == "SHORT":
                 if current_candle['High'] >= self.stop_loss:
                     self.is_open = False
                     self.is_profit = False
+                    self.is_in_game = False
                     self.trade_return = self.percentage_loss * self.size
                     print(f"{self.type} {self.open_date} TRADE CLOSED ON LOSS: {self.trade_return:.2f}")
                     return self.is_profit, self.trade_return
                 elif current_candle['Low'] <= self.take_profit:
                     self.is_open = False
                     self.is_profit = True
+                    self.is_in_game = False
                     self.trade_return = self.percentage_profit * self.size
 
                     print(f"{self.type} {self.open_date} TRADE CLOSED ON PROFIT: {self.trade_return:.2f}")
@@ -160,12 +156,14 @@ class Trade:
                 if current_candle['Low'] <= self.stop_loss:
                     self.is_open = False
                     self.is_profit = False
+                    self.is_in_game = False
                     self.trade_return = self.percentage_loss * self.size
                     print(f"{self.type} {self.open_date} TRADE CLOSED ON LOSS: {self.trade_return:.2f}")
                     return self.is_profit, self.trade_return
                 elif current_candle['High'] >= self.take_profit:
                     self.is_open = False
                     self.is_profit = True
+                    self.is_in_game = False
                     self.trade_return = self.percentage_profit * self.size
                     print(f"{self.type} {self.open_date} TRADE CLOSED ON PROFIT: {self.trade_return:.2f}")
                     return self.is_profit, self.trade_return
@@ -188,7 +186,7 @@ class Trader:
 
     def show_stats(self):
         avg_return = 0 if self.trades_closed == 0 else self.total_money / self.trades_closed
-        print(f"AVG RETURN PER TRADE: {avg_return:.2f}, TOTAL: {(self.total_money - (100 * self.trades_closed)):.2f}")
+        print(f"AVG RETURN PER TRADE: {avg_return:.2f}, TOTAL: {(self.total_money - (10000 * self.trades_closed)):.2f}")
 
     def check_trade(self, current_candle):
         change = False
@@ -202,8 +200,13 @@ class Trader:
         return change
 
     def cancel_unopened_trades(self):
-        for trade in self.trades:
-            trade.cancel_trade()
+        closed = 0
+        for idx, trade in enumerate(self.trades):
+            if trade.is_open and not trade.is_in_game:
+                trade.cancel_trade()
+                print(f"CLOSED TRADE: {trade.open_date} {trade.type} {trade.entry_price}")
+                closed += 1
+
 
     # DECIDE WHAT IS THE ENTRY POINT
     def open_trade(self, entry_price, stop_loss, take_profit, date):
@@ -212,13 +215,13 @@ class Trader:
 
 trader = Trader()
 
-df = pd.read_csv('BTCUSDT-1s-2024-08-07.csv')
+df = pd.read_csv('BTCUSDT-1s-2024-07.csv')
 df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "close_time", "quote_volume", "count",
               "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
 df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
 df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-df = df[(df['Date'] > '2024-08-07 00:00:01') & (df['Date'] < '2024-08-07 23:59:59')]
+df = df[(df['Date'] > '2024-07-01 15:58:20') & (df['Date'] < '2024-07-01 23:59:59')]
 # mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
 #          datetime_format='%H:%M:%S')
 
@@ -228,10 +231,11 @@ min_window_width = 10#10
 df.reset_index(inplace=True)
 
 previous_consolidation_peak = None
-for idx in range(max_window_width-1, len(df), 1):
+for idx in range(max_window_width - 1, len(df), 1):
     current_candle = df.loc[idx]
     start_date = current_candle['Date'].to_pydatetime()
-    # print(start_date)
+    if start_date.second == 0:
+        print(start_date)
     t = time.time()
     found_in_window = False
 
@@ -275,20 +279,15 @@ for idx in range(max_window_width-1, len(df), 1):
                 # DO A TRADE
                 if last_peak['Half']:
                     trader.open_trade(entry_price=mean_bottom, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
-                    # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
                 else:
                     trader.open_trade(entry_price=mean_top, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
-                    # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
             else:
-                # print(last_peak['Half'], previous_consolidation_peak['Half'])
                 if previous_consolidation_peak['Half'] != last_peak['Half']:
                     show = True
                     if last_peak['Half']:
                         trader.open_trade(entry_price=mean_bottom, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
-                        # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
                     else:
                         trader.open_trade(entry_price=mean_top, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
-                        # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
             if show and False:
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
@@ -304,6 +303,7 @@ for idx in range(max_window_width-1, len(df), 1):
                 ax2.axhline(mean_bottom, color='red')
 
                 ax2.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
+
                 fig.suptitle('BTC Candlestick Chart and Peak Analysis')
 
                 plt.tight_layout()
