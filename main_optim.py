@@ -6,7 +6,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import mplfinance as mpf
 import os
+import warnings
 
+# Suppress a specific warning category
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+# Suppress warnings with a specific message
+warnings.filterwarnings("ignore", message="some specific warning message")
+
+warnings.filterwarnings("ignore")
 directory = "consolidations_new"
 
 # Check if the directory exists
@@ -142,7 +150,7 @@ class Trade:
                     self.is_profit = False
                     self.is_in_game = False
                     self.trade_return = self.percentage_loss * self.size
-                    print(f"{self.type} {self.open_date} TRADE CLOSED ON LOSS: {self.trade_return:.2f}")
+                    print(f"{self.type} {self.open_date} TRADE CLOSED ON LOSS: {self.trade_return:.2f} AT {current_candle['Date']}")
                     return self.is_profit, self.trade_return
                 elif current_candle['Low'] <= self.take_profit:
                     self.is_open = False
@@ -150,7 +158,7 @@ class Trade:
                     self.is_in_game = False
                     self.trade_return = self.percentage_profit * self.size
 
-                    print(f"{self.type} {self.open_date} TRADE CLOSED ON PROFIT: {self.trade_return:.2f}")
+                    print(f"{self.type} {self.open_date} TRADE CLOSED ON PROFIT: {self.trade_return:.2f} AT {current_candle['Date']}")
                     return self.is_profit, self.trade_return
             else:
                 if current_candle['Low'] <= self.stop_loss:
@@ -158,14 +166,14 @@ class Trade:
                     self.is_profit = False
                     self.is_in_game = False
                     self.trade_return = self.percentage_loss * self.size
-                    print(f"{self.type} {self.open_date} TRADE CLOSED ON LOSS: {self.trade_return:.2f}")
+                    print(f"{self.type} {self.open_date} TRADE CLOSED ON LOSS: {self.trade_return:.2f} AT {current_candle['Date']}")
                     return self.is_profit, self.trade_return
                 elif current_candle['High'] >= self.take_profit:
                     self.is_open = False
                     self.is_profit = True
                     self.is_in_game = False
                     self.trade_return = self.percentage_profit * self.size
-                    print(f"{self.type} {self.open_date} TRADE CLOSED ON PROFIT: {self.trade_return:.2f}")
+                    print(f"{self.type} {self.open_date} TRADE CLOSED ON PROFIT: {self.trade_return:.2f} AT {current_candle['Date']}")
                     return self.is_profit, self.trade_return
         else:
             if current_candle['Low'] <= self.entry_price <= current_candle['High']:
@@ -221,7 +229,7 @@ df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "close_time", "q
 df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
 df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-df = df[(df['Date'] > '2024-07-01 15:58:20') & (df['Date'] < '2024-07-01 23:59:59')]
+df = df[(df['Date'] > '2024-07-01 16:01:18') & (df['Date'] < '2024-07-01 23:59:59')]
 # mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
 #          datetime_format='%H:%M:%S')
 
@@ -279,15 +287,20 @@ for idx in range(max_window_width - 1, len(df), 1):
                 # DO A TRADE
                 if last_peak['Half']:
                     trader.open_trade(entry_price=mean_bottom, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
+                    # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
                 else:
                     trader.open_trade(entry_price=mean_top, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
+                    # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
             else:
+                # print(last_peak['Half'], previous_consolidation_peak['Half'])
                 if previous_consolidation_peak['Half'] != last_peak['Half']:
                     show = True
                     if last_peak['Half']:
                         trader.open_trade(entry_price=mean_bottom, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
+                        # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
                     else:
                         trader.open_trade(entry_price=mean_top, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
+                        # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
             if show and False:
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
