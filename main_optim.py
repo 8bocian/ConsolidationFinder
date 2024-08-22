@@ -223,153 +223,156 @@ class Trader:
         self.trades.append(new_trade)
         return new_trade
 
-trader = Trader()
+if __name__ == "__main__":
+    trader = Trader()
 
-df = pd.read_csv('BTCUSDT-1s-2024-07.csv')
-df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "close_time", "quote_volume", "count",
-              "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
-df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
+    df = pd.read_csv('BTCUSDT-1s-2024-07.csv')
+    df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "close_time", "quote_volume", "count",
+                  "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
+    df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
-df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-df = df[(df['Date'] > '2024-07-04 01:42:01') & (df['Date'] < '2024-07-08 23:59:59')]
-# mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
-#          datetime_format='%H:%M:%S')
+    df['Date'] = pd.to_datetime(df['Date'], unit='ms')
+    df = df[(df['Date'] > '2024-07-04 01:42:01') & (df['Date'] < '2024-07-04 13:59:59')]
+    mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
+             datetime_format='%H:%M:%S')
 
-max_window_width = 2 * 60
-min_window_width = 10#10
+    max_window_width = 2 * 60
+    min_window_width = 10#10
 
-df.reset_index(inplace=True)
+    df.reset_index(inplace=True)
 
-previous_consolidation_peak = None
-for idx in range(max_window_width - 1, len(df), 1):
-    current_candle = df.loc[idx]
-    start_date = current_candle['Date'].to_pydatetime()
-    if start_date.second == 0:
-        print(start_date)
-    t = time.time()
-    found_in_window = False
+    previous_consolidation_peak = None
+    for idx in range(max_window_width - 1, len(df), 1):
+        current_candle = df.loc[idx]
+        start_date = current_candle['Date'].to_pydatetime()
+        if start_date.second == 0:
+            print(start_date)
+        t = time.time()
+        found_in_window = False
 
-    show = False
-    max_window_size = 0
+        show = False
+        max_window_size = 0
 
-    is_change = trader.check_trade(current_candle)
-    if is_change:
-        show = True
-        trader.show_stats()
+        is_change = trader.check_trade(current_candle)
+        if is_change:
+            show = True
+            trader.show_stats()
 
-    for i in range(min_window_width, max_window_width, 1):
-        candles_range = df.loc[idx - i:idx].copy()
-        # candles_range = candles_range[::-1]
-        candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
-        candles_range.reset_index(inplace=True)
+        for i in range(min_window_width, max_window_width, 1):
+            candles_range = df.loc[idx - i:idx].copy()
+            # candles_range = candles_range[::-1]
+            candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
+            candles_range.reset_index(inplace=True)
 
-        grouped_peaks, found, \
-        bottom_border_min, mean_bottom, bottom_border_max, \
-        top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
+            grouped_peaks, found, \
+            bottom_border_min, mean_bottom, bottom_border_max, \
+            top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
 
-        if found:
-            max_window_size = i
-    if max_window_size != 0:
-        candles_range = df.loc[idx - max_window_size:idx].copy()
-        # candles_range = candles_range[::-1]
-        candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
-        candles_range.reset_index(inplace=True)
-        grouped_peaks, found, \
-        bottom_border_min, mean_bottom, bottom_border_max, \
-        top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
+            if found:
+                max_window_size = i
+        if max_window_size != 0:
+            candles_range = df.loc[idx - max_window_size:idx].copy()
+            # candles_range = candles_range[::-1]
+            candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
+            candles_range.reset_index(inplace=True)
+            grouped_peaks, found, \
+            bottom_border_min, mean_bottom, bottom_border_max, \
+            top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
 
-        #CHECK IF FOUND CONSECUTIVE CONSOLIDATIONS, IF ARE CONSECUTIVE CHECK IF THE PEAK IS TOP OR BOTTOM, IF IS THE SAME AS PREVIOUS THEN DO NOTHING ELSE OPEN A TRADE
+            #CHECK IF FOUND CONSECUTIVE CONSOLIDATIONS, IF ARE CONSECUTIVE CHECK IF THE PEAK IS TOP OR BOTTOM, IF IS THE SAME AS PREVIOUS THEN DO NOTHING ELSE OPEN A TRADE
 
-        if found:
-            last_peak = grouped_peaks.iloc[-1]
-            opened_trade = None
-            if previous_consolidation_peak is None:
-                # print(last_peak['Half'], previous_consolidation_peak)
-                show = True
-                # DO A TRADE
-                # ENTRY PRICE IS TOP MID BOTTOM OF CHANNEL?
-                if last_peak['Half']:
-                    opened_trade = trader.open_trade(entry_price=mean_bottom, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
-                    # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
-                else:
-                    opened_trade = trader.open_trade(entry_price=mean_top, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
-                    # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
-            else:
-                # print(last_peak['Half'], previous_consolidation_peak['Half'])
-                if previous_consolidation_peak['Half'] != last_peak['Half']:
+            if found:
+                last_peak = grouped_peaks.iloc[-1]
+                opened_trade = None
+                if previous_consolidation_peak is None:
+                    # print(last_peak['Half'], previous_consolidation_peak)
                     show = True
+                    # DO A TRADE
+                    # ENTRY PRICE IS TOP MID BOTTOM OF CHANNEL?
                     if last_peak['Half']:
                         opened_trade = trader.open_trade(entry_price=mean_bottom, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
                         # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
                     else:
                         opened_trade = trader.open_trade(entry_price=mean_top, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
                         # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
-            if opened_trade is not None:
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+                else:
+                    # print(last_peak['Half'], previous_consolidation_peak['Half'])
+                    if previous_consolidation_peak['Half'] != last_peak['Half']:
+                        show = True
+                        if last_peak['Half']:
+                            opened_trade = trader.open_trade(entry_price=mean_bottom, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
+                            # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
+                        else:
+                            opened_trade = trader.open_trade(entry_price=mean_top, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
+                            # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
+                if opened_trade is not None:
+                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
-                mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', ylabel='Price',
-                         datetime_format='%H:%M:%S', ax=ax1, show_nontrading=True)
+                    mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', ylabel='Price',
+                             datetime_format='%H:%M:%S', ax=ax1, show_nontrading=True)
 
-                ax2.fill_between(grouped_peaks['Date'], top_border_max,
-                                 top_border_min, color='blue', alpha=0.3)
-                ax2.fill_between(grouped_peaks['Date'], bottom_border_max,
-                                 bottom_border_min, color='red', alpha=0.3)
+                    ax2.fill_between(grouped_peaks['Date'], top_border_max,
+                                     top_border_min, color='blue', alpha=0.3)
+                    ax2.fill_between(grouped_peaks['Date'], bottom_border_max,
+                                     bottom_border_min, color='red', alpha=0.3)
 
-                ax2.axhline(mean_top, color='blue')
-                ax2.axhline(mean_bottom, color='red')
+                    ax2.axhline(mean_top, color='blue')
+                    ax2.axhline(mean_bottom, color='red')
 
-                ax2.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
+                    ax2.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
 
-                fig.suptitle('BTC Candlestick Chart and Peak Analysis')
+                    fig.suptitle('BTC Candlestick Chart and Peak Analysis')
 
-                plt.tight_layout()
-                plt.savefig(f'trades/{opened_trade.open_date} {max_window_size} {opened_trade.type} {opened_trade.entry_price}.png')
-                if show and False:
+                    plt.tight_layout()
+                    safe_open_date = str(opened_trade.open_date).replace(":", "-")
 
-                    plt.show()
+                    plt.savefig(f'trades/{safe_open_date} {max_window_size} {opened_trade.type} {opened_trade.entry_price}.png')
+                    if show and False:
 
-                # plt.cla()
-                # plt.clf()
-            previous_consolidation_peak = last_peak
+                        plt.show()
 
-            # print(previous_consolidation_peak)
+                    # plt.cla()
+                    # plt.clf()
+                previous_consolidation_peak = last_peak
+
+                # print(previous_consolidation_peak)
+            else:
+                previous_consolidation_peak = None
         else:
-            previous_consolidation_peak = None
-    else:
-        trader.cancel_unopened_trades()
+            trader.cancel_unopened_trades()
 
-    # if found_in_window == False and len(previous_consolidation_dates) != 0:
-    #     print(previous_consolidation_dates[0], previous_consolidation_dates[-1])
-    #
-    #     consolidation_start = previous_consolidation_dates[0][0]
-    #     consolidation_end = previous_consolidation_dates[-1][0] + previous_consolidation_dates[-1][-1]
-    #     candles_range = df.loc[consolidation_start:consolidation_end].copy()
-    #     candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
-    #     candles_range = candles_range[::-1]
-    #     candles_range.reset_index(inplace=True)
-    #     mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
-    #              datetime_format='%H:%M:%S')
-    #     grouped_peaks, found, \
-    #     bottom_border_min, mean_bottom, bottom_border_max, \
-    #     top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
-    #     if found:
-    #         plt.fill_between(grouped_peaks['Date'], top_border_max,
-    #                          top_border_min, color='blue', alpha=0.3)
-    #         plt.fill_between(grouped_peaks['Date'], bottom_border_max,
-    #                          bottom_border_min, color='red', alpha=0.3)
-    #
-    #         plt.axhline(mean_top, color='blue')
-    #         plt.axhline(mean_bottom, color='red')
-    #
-    #         plt.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
-    #         # plt.savefig(f'consolidations_new/{str(candles_range["Date"].values[0]).replace(":", "-").replace(" ", "_")}-{str(candles_range["Date"].values[-1]).replace(":", "-").replace(" ", "_")}.png')
-    #         plt.show()
-    #
-    #         plt.cla()
-    #         plt.clf()
-    #         # with open("results.txt", 'w+') as f:
-    #         #     f.write(f"{str(start_date)}\n")
-    #     previous_consolidation_dates = []
-    # print(time.time() - t)
+        # if found_in_window == False and len(previous_consolidation_dates) != 0:
+        #     print(previous_consolidation_dates[0], previous_consolidation_dates[-1])
+        #
+        #     consolidation_start = previous_consolidation_dates[0][0]
+        #     consolidation_end = previous_consolidation_dates[-1][0] + previous_consolidation_dates[-1][-1]
+        #     candles_range = df.loc[consolidation_start:consolidation_end].copy()
+        #     candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
+        #     candles_range = candles_range[::-1]
+        #     candles_range.reset_index(inplace=True)
+        #     mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
+        #              datetime_format='%H:%M:%S')
+        #     grouped_peaks, found, \
+        #     bottom_border_min, mean_bottom, bottom_border_max, \
+        #     top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
+        #     if found:
+        #         plt.fill_between(grouped_peaks['Date'], top_border_max,
+        #                          top_border_min, color='blue', alpha=0.3)
+        #         plt.fill_between(grouped_peaks['Date'], bottom_border_max,
+        #                          bottom_border_min, color='red', alpha=0.3)
+        #
+        #         plt.axhline(mean_top, color='blue')
+        #         plt.axhline(mean_bottom, color='red')
+        #
+        #         plt.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
+        #         # plt.savefig(f'consolidations_new/{str(candles_range["Date"].values[0]).replace(":", "-").replace(" ", "_")}-{str(candles_range["Date"].values[-1]).replace(":", "-").replace(" ", "_")}.png')
+        #         plt.show()
+        #
+        #         plt.cla()
+        #         plt.clf()
+        #         # with open("results.txt", 'w+') as f:
+        #         #     f.write(f"{str(start_date)}\n")
+        #     previous_consolidation_dates = []
+        # print(time.time() - t)
 
 
