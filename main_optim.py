@@ -114,9 +114,6 @@ def detect_consolidation(candles_range):
     bottom_border_max = mean_bottom * (1 + (g / 100))
 
     total_length = len(candles_range)
-    tops_std = np.std(tops['Peak'])
-    bottoms_std = np.std(bottoms['Peak'])
-
 
     tops_range = total_length * 1 / len(tops)
     bottoms_range = total_length * 1 / len(bottoms)
@@ -124,7 +121,7 @@ def detect_consolidation(candles_range):
     tops_ranges = [idx * tops_range <= top <= (idx + 1) * tops_range for idx, top in enumerate(tops['Order'])]
     bottoms_ranges = [idx * bottoms_range <= bottom <= (idx + 1) * bottoms_range for idx, bottom in enumerate(bottoms['Order'])]
 
-    if all(tops_ranges) and all(bottoms_ranges) and len(tops) + len(bottoms) > 4 \
+    if all(tops_ranges) and all(bottoms_ranges) and len(tops) + len(bottoms) > 5 \
             and \
             values_in_range(tops['Peak'],
                             top_border_min,
@@ -157,7 +154,7 @@ class Trade:
         self.percentage_loss = 1 - abs(entry_price - stop_loss) / entry_price
         self.percentage_profit = 1 + abs(entry_price - take_profit) / entry_price
         self.is_open = True
-        self.is_in_game = False
+        self.is_in_game = True
         self.is_profit = None
 
     def check_trade(self, current_candle):
@@ -254,7 +251,7 @@ if __name__ == "__main__":
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
     df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-    df = df[(df['Date'] > '2024-07-05 01:00:01') & (df['Date'] < '2024-07-07 23:59:59')]
+    df = df[(df['Date'] > '2024-07-05 02:53:01') & (df['Date'] < '2024-07-07 23:59:59')]
     # mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
     #          datetime_format='%H:%M:%S')
 
@@ -301,6 +298,9 @@ if __name__ == "__main__":
             bottom_border_min, mean_bottom, bottom_border_max, \
             top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
 
+            sl_long = current_candle['Close'] + top_border_max - mean_top
+            sl_short = current_candle['Close'] - top_border_max - mean_top
+
             #CHECK IF FOUND CONSECUTIVE CONSOLIDATIONS, IF ARE CONSECUTIVE CHECK IF THE PEAK IS TOP OR BOTTOM, IF IS THE SAME AS PREVIOUS THEN DO NOTHING ELSE OPEN A TRADE
 
             if found:
@@ -312,21 +312,20 @@ if __name__ == "__main__":
                     # DO A TRADE
                     # ENTRY PRICE IS TOP MID BOTTOM OF CHANNEL?
                     if last_peak['Half']:
-                        opened_trade = trader.open_trade(entry_price=bottom_border_max, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
-                        # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
+                        opened_trade = trader.open_trade(entry_price=current_candle['Close'], stop_loss=sl_short, take_profit=bottom_border_max, date=start_date)
+                        print(current_candle['Close'], sl_short, bottom_border_max, start_date)
                     else:
-                        opened_trade = trader.open_trade(entry_price=top_border_min, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
-                        # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
+                        opened_trade = trader.open_trade(entry_price=current_candle['Close'], stop_loss=sl_long, take_profit=top_border_min, date=start_date)
+                        print(current_candle['Close'], sl_short, bottom_border_max, start_date)
                 else:
-                    # print(last_peak['Half'], previous_consolidation_peak['Half'])
                     if previous_consolidation_peak['Half'] != last_peak['Half']:
                         show = True
                         if last_peak['Half']:
-                            opened_trade = trader.open_trade(entry_price=bottom_border_max, stop_loss=bottom_border_min, take_profit=top_border_min, date=start_date)
-                            # IF WE ARE ON TOP THEN TRY TO FIND A LONG FROM BOTTOM
+                            opened_trade = trader.open_trade(entry_price=current_candle['Close'], stop_loss=sl_short, take_profit=bottom_border_max, date=start_date)
+                            print(current_candle['Close'], sl_short, bottom_border_max, start_date)
                         else:
-                            opened_trade = trader.open_trade(entry_price=top_border_min, stop_loss=top_border_max, take_profit=bottom_border_max, date=start_date)
-                            # IF WE ARE ON BOTTOM THEN TRY TO FIND A SHORT FROM TOP
+                            opened_trade = trader.open_trade(entry_price=current_candle['Close'], stop_loss=sl_long, take_profit=top_border_min, date=start_date)
+                            print(current_candle['Close'], sl_short, bottom_border_max, start_date)
                 if opened_trade is not None:
                     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
