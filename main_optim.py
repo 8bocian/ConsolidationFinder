@@ -101,6 +101,11 @@ def detect_consolidation(candles_range):
     tops = grouped_peaks[grouped_peaks['Half'] == True]
     bottoms = grouped_peaks[grouped_peaks['Half'] == False]
 
+    if len(tops) == 0 or len(bottoms) == 0:
+        return None, found, \
+               None, None, None, \
+               None, None, None
+
     mean_top = np.mean(tops['Peak'])
     mean_bottom = np.mean(bottoms['Peak'])
 
