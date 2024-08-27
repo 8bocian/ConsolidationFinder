@@ -117,14 +117,13 @@ def detect_consolidation(candles_range):
     tops_std = np.std(tops['Peak'])
     bottoms_std = np.std(bottoms['Peak'])
 
-    print(total_length, tops_std, bottoms_std)
 
     tops_range = total_length * 1 / len(tops)
     bottoms_range = total_length * 1 / len(bottoms)
 
     tops_ranges = [idx * tops_range <= top <= (idx + 1) * tops_range for idx, top in enumerate(tops['Order'])]
     bottoms_ranges = [idx * bottoms_range <= bottom <= (idx + 1) * bottoms_range for idx, bottom in enumerate(bottoms['Order'])]
-    print(tops_ranges, bottoms_ranges)
+
     if all(tops_ranges) and all(bottoms_ranges) and len(tops) + len(bottoms) > 4 \
             and \
             values_in_range(tops['Peak'],
