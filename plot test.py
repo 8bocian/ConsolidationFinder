@@ -6,7 +6,7 @@ df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "close_time", "q
 df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
 df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-df = df[(df['Date'] > '2024-07-04 05:17:10') & (df['Date'] < '2024-07-04 05:20:20')]
+df = df[(df['Date'] > '2024-07-05 02:54:42') & (df['Date'] < '2024-07-05 02:55:53')]
 candles_range = df.copy()
 candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
 candles_range.reset_index(inplace=True)

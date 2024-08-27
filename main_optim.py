@@ -72,16 +72,16 @@ def detect_consolidation(candles_range):
     found = False
 
     peaks = check_reversal(candles_range)
-    if len(peaks) == 0:
-        return None, found, \
-           None, None, None, \
-           None, None, None
+    # if len(peaks) == 0:
+    #     return None, found, \
+    #        None, None, None, \
+    #        None, None, None
 
     top = peaks['Peak'].max()
     bottom = peaks['Peak'].min()
     midpoint = (top + bottom) / 2
 
-    middle_threshold = 0.5
+    middle_threshold = 0.7
     diff = top - midpoint
 
     top_border = midpoint + (diff * middle_threshold)
@@ -93,10 +93,10 @@ def detect_consolidation(candles_range):
     grouped_peaks = peaks.groupby(['Group']).apply(get_extreme_row).reset_index(drop=True)
     grouped_peaks = grouped_peaks.drop(columns=["Group"])
 
-    if len(grouped_peaks) <= 4:
-        return None, found, \
-           None, None, None, \
-           None, None, None
+    # if len(grouped_peaks) <= 4:
+    #     return None, found, \
+    #        None, None, None, \
+    #        None, None, None
 
     tops = grouped_peaks[grouped_peaks['Half'] == True]
     bottoms = grouped_peaks[grouped_peaks['Half'] == False]
@@ -120,8 +120,8 @@ def detect_consolidation(candles_range):
 
     tops_ranges = [idx * tops_range <= top <= (idx + 1) * tops_range for idx, top in enumerate(tops['Order'])]
     bottoms_ranges = [idx * bottoms_range <= bottom <= (idx + 1) * bottoms_range for idx, bottom in enumerate(bottoms['Order'])]
-
-    if all(tops_ranges) and all(bottoms_ranges) and len(tops) + len(bottoms) > 5 \
+# all(tops_ranges) and all(bottoms_ranges) and
+    if len(tops) + len(bottoms) > 5 \
             and \
             values_in_range(tops['Peak'],
                             top_border_min,
@@ -131,6 +131,15 @@ def detect_consolidation(candles_range):
                             bottom_border_min,
                             bottom_border_max):
         found = True
+    # print(all(tops_ranges), all(bottoms_ranges), len(tops) + len(bottoms) > 5
+    #         ,
+    #         values_in_range(tops['Peak'],
+    #                         top_border_min,
+    #                         top_border_max)
+    #         ,
+    #         values_in_range(bottoms['Peak'],
+    #                         bottom_border_min,
+    #                         bottom_border_max))
     return grouped_peaks, found, \
            bottom_border_min, mean_bottom, bottom_border_max, \
            top_border_min, mean_top, top_border_max
@@ -298,8 +307,8 @@ if __name__ == "__main__":
             bottom_border_min, mean_bottom, bottom_border_max, \
             top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
 
-            sl_long = current_candle['Close'] + top_border_max - mean_top
-            sl_short = current_candle['Close'] - top_border_max - mean_top
+            sl_long = current_candle['Close'] - (top_border_max - top_border_min)
+            sl_short = current_candle['Close'] + (top_border_max - top_border_min)
 
             #CHECK IF FOUND CONSECUTIVE CONSOLIDATIONS, IF ARE CONSECUTIVE CHECK IF THE PEAK IS TOP OR BOTTOM, IF IS THE SAME AS PREVIOUS THEN DO NOTHING ELSE OPEN A TRADE
 
@@ -313,19 +322,15 @@ if __name__ == "__main__":
                     # ENTRY PRICE IS TOP MID BOTTOM OF CHANNEL?
                     if last_peak['Half']:
                         opened_trade = trader.open_trade(entry_price=current_candle['Close'], stop_loss=sl_short, take_profit=bottom_border_max, date=start_date)
-                        print(current_candle['Close'], sl_short, bottom_border_max, start_date)
                     else:
                         opened_trade = trader.open_trade(entry_price=current_candle['Close'], stop_loss=sl_long, take_profit=top_border_min, date=start_date)
-                        print(current_candle['Close'], sl_short, bottom_border_max, start_date)
                 else:
                     if previous_consolidation_peak['Half'] != last_peak['Half']:
                         show = True
                         if last_peak['Half']:
                             opened_trade = trader.open_trade(entry_price=current_candle['Close'], stop_loss=sl_short, take_profit=bottom_border_max, date=start_date)
-                            print(current_candle['Close'], sl_short, bottom_border_max, start_date)
                         else:
                             opened_trade = trader.open_trade(entry_price=current_candle['Close'], stop_loss=sl_long, take_profit=top_border_min, date=start_date)
-                            print(current_candle['Close'], sl_short, bottom_border_max, start_date)
                 if opened_trade is not None:
                     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
