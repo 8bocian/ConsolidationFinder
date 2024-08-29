@@ -265,9 +265,9 @@ if __name__ == "__main__":
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
     df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-    df = df[(df['Date'] > '2024-07-05 02:53:01') & (df['Date'] < '2024-07-07 23:59:59')]
-    # mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
-    #          datetime_format='%H:%M:%S')
+    df = df[(df['Date'] > '2024-07-07 00:00:01') & (df['Date'] < '2024-07-08 23:59:59')]
+    mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
+             datetime_format='%H:%M:%S')
 
     max_window_width = 2 * 60
     min_window_width = 10#10
