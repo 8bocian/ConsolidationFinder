@@ -259,13 +259,13 @@ class Trader:
 if __name__ == "__main__":
     trader = Trader()
 
-    df = pd.read_csv('BTCUSDT-1s-2024-07.csv')
+    df = pd.read_csv('BTCUSDT-1m-2024-06.csv')
     df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "close_time", "quote_volume", "count",
                   "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
     df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-    df = df[(df['Date'] > '2024-07-08 00:00:01') & (df['Date'] < '2024-07-08 23:59:59')]
+    # df = df[(df['Date'] > '2024-06-01 00:00:01') & (df['Date'] < '2024-07-08 23:59:59')]
     mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
              datetime_format='%H:%M:%S')
 
