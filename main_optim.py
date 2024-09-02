@@ -255,12 +255,12 @@ if __name__ == "__main__":
     trader = Trader()
 
     df = pd.read_csv('BTCUSDT-3s-2024-07.csv', index_col=0)
-    print(df)
+    # print(df)
     df.columns = ["Date", "Open", "High", "Low", "Close", "Volume"]
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
     df['Date'] = pd.to_datetime(df['Date'])
-    df = df[(df['Date'] > '2024-07-02 00:00:01') & (df['Date'] < '2024-07-05 23:59:59')]
+    df = df[(df['Date'] > '2024-07-03 00:00:01') & (df['Date'] < '2024-07-05 23:59:59')]
     mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
              datetime_format='%H:%M:%S')
 
