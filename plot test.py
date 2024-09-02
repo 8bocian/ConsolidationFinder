@@ -1,18 +1,23 @@
 from main_optim import *
 
-df = pd.read_csv('BTCUSDT-1s-2024-07.csv')
+df = pd.read_csv('BTCUSDT-3s-2024-07.csv')
 df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "close_time", "quote_volume", "count",
               "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
 df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
 df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-df = df[(df['Date'] > '2024-07-07 15:22:15') & (df['Date'] < '2024-07-07 15:23:44')]
+df = df[(df['Date'] > '2024-07-01 00:14:30') & (df['Date'] < '2024-07-01 00:15:59')]
 candles_range = df.copy()
+mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', ylabel='Price',
+         datetime_format='%H:%M:%S', show_nontrading=True)
+peaks = check_reversal(df.loc[idx - max_window_width: idx])
+
 candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
 candles_range.reset_index(inplace=True)
+
 grouped_peaks, found, \
 bottom_border_min, mean_bottom, bottom_border_max, \
-top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
+top_border_min, mean_top, top_border_max = detect_consolidation(peaks)
 
 #CHECK IF FOUND CONSECUTIVE CONSOLIDATIONS, IF ARE CONSECUTIVE CHECK IF THE PEAK IS TOP OR BOTTOM, IF IS THE SAME AS PREVIOUS THEN DO NOTHING ELSE OPEN A TRADE
 # 15% z kazdej strony lub mniej

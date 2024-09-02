@@ -23,6 +23,8 @@ if not os.path.exists(directory):
     os.makedirs(directory)
 
 def check_reversal(candles_range):
+    candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
+
     peaks = []
     is_previous_green = None
     for idx, candle in candles_range.iterrows():
@@ -67,16 +69,9 @@ def values_in_range(values, lower_border, upper_border):
     return True
 
 
-def detect_consolidation(candles_range):
-    candles_range['Order'] = range(len(candles_range))
+def detect_consolidation(peaks):
     found = False
-
-    peaks = check_reversal(candles_range)
-    # if len(peaks) == 0:
-    #     return None, found, \
-    #        None, None, None, \
-    #        None, None, None
-
+    # peaks = check_reversal(candles_range)
     top = peaks['Peak'].max()
     bottom = peaks['Peak'].min()
     midpoint = (top + bottom) / 2
@@ -118,15 +113,15 @@ def detect_consolidation(candles_range):
     bottom_border_min = mean_bottom * (1 - (g / 100))
     bottom_border_max = mean_bottom * (1 + (g / 100))
 
-    total_length = len(candles_range)
+    # total_length = len(candles_range)
 
-    tops_range = total_length * 1 / len(tops)
-    bottoms_range = total_length * 1 / len(bottoms)
+    # tops_range = total_length * 1 / len(tops)
+    # bottoms_range = total_length * 1 / len(bottoms)
 
-    tops_ranges = [idx * tops_range <= top <= (idx + 1) * tops_range for idx, top in enumerate(tops['Order'])]
-    bottoms_ranges = [idx * bottoms_range <= bottom <= (idx + 1) * bottoms_range for idx, bottom in enumerate(bottoms['Order'])]
-# all(tops_ranges) and all(bottoms_ranges) and
-    if len(tops) + len(bottoms) > 5 \
+    # tops_ranges = [idx * tops_range <= top <= (idx + 1) * tops_range for idx, top in enumerate(tops['Order'])]
+    # bottoms_ranges = [idx * bottoms_range <= bottom <= (idx + 1) * bottoms_range for idx, bottom in enumerate(bottoms['Order'])]
+    # all(tops_ranges) and all(bottoms_ranges) and
+    if len(tops) + len(bottoms) > 4 \
             and \
             values_in_range(tops['Peak'],
                             top_border_min,
@@ -259,13 +254,13 @@ class Trader:
 if __name__ == "__main__":
     trader = Trader()
 
-    df = pd.read_csv('BTCUSDT-1m-2024-06.csv')
-    df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "close_time", "quote_volume", "count",
-                  "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
+    df = pd.read_csv('BTCUSDT-3s-2024-07.csv', index_col=0)
+    print(df)
+    df.columns = ["Date", "Open", "High", "Low", "Close", "Volume"]
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
-    df['Date'] = pd.to_datetime(df['Date'], unit='ms')
-    # df = df[(df['Date'] > '2024-06-01 00:00:01') & (df['Date'] < '2024-07-08 23:59:59')]
+    df['Date'] = pd.to_datetime(df['Date'])
+    df = df[(df['Date'] > '2024-07-02 00:00:01') & (df['Date'] < '2024-07-05 23:59:59')]
     mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
              datetime_format='%H:%M:%S')
 
@@ -273,14 +268,13 @@ if __name__ == "__main__":
     min_window_width = 10#10
 
     df.reset_index(inplace=True)
-
+    df['Order'] = range(len(df))
     previous_consolidation_peak = None
     for idx in range(max_window_width - 1, len(df), 1):
         current_candle = df.loc[idx]
         start_date = current_candle['Date'].to_pydatetime()
         if start_date.second == 0:
             print(start_date)
-        t = time.time()
         found_in_window = False
 
         show = False
@@ -291,26 +285,34 @@ if __name__ == "__main__":
             show = True
             trader.show_stats()
 
+        total_reversals = check_reversal(df.loc[idx-(max_window_width): idx])
+
         for i in range(min_window_width, max_window_width, 1):
             candles_range = df.loc[idx - i:idx].copy()
-            # candles_range = candles_range[::-1]
-            candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
-            candles_range.reset_index(inplace=True)
+            peaks = total_reversals[total_reversals['Date'].isin(candles_range['Date'])]
+            # peaks_ = check_reversal(candles_range)
+            # if idx == 200:
+            #     print(peaks.head(50))
+            #     print(peaks_.head(50))
+            #     quit()
+            # candles_range.reset_index(inplace=True)
 
             grouped_peaks, found, \
             bottom_border_min, mean_bottom, bottom_border_max, \
-            top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
+            top_border_min, mean_top, top_border_max = detect_consolidation(peaks)
 
             if found:
                 max_window_size = i
+
         if max_window_size != 0:
             candles_range = df.loc[idx - max_window_size:idx].copy()
-            # candles_range = candles_range[::-1]
-            candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
+            peaks = total_reversals[total_reversals['Order'].isin(candles_range['Order'])]
+
             candles_range.reset_index(inplace=True)
+
             grouped_peaks, found, \
             bottom_border_min, mean_bottom, bottom_border_max, \
-            top_border_min, mean_top, top_border_max = detect_consolidation(candles_range)
+            top_border_min, mean_top, top_border_max = detect_consolidation(peaks)
 
             sl_long = current_candle['Close'] - (top_border_max - top_border_min)
             sl_short = current_candle['Close'] + (top_border_max - top_border_min)
