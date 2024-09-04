@@ -28,17 +28,23 @@ def check_reversal(candles_range):
     peaks = []
     is_previous_green = None
     candles_range.reset_index(inplace=True)
+    previous_candle = None
     for idx, candle in candles_range.iterrows():
         is_current_green = candle['Close'] > candle['Open']
+        T = 0
+        if is_previous_green != is_current_green and is_previous_green is not None:
+            peaks.append((previous_candle['Date'], candle['Open'], previous_candle['Order']))
+            T += 1
         if is_previous_green is None:
             peaks.append((candle['Date'], candle['Open'], candle['Order']))
-        print(idx, len(candles_range))
+            T += 1
         if idx == len(candles_range) - 1:
             peaks.append((candle['Date'], candle['Close'], candle['Order']))
-        else:
-            if is_previous_green != is_current_green:
-                peaks.append((candle['Date'], candle['Open'], candle['Order']))
+            T += 1
+
+
         is_previous_green = is_current_green
+        previous_candle = candle
     peaks = pd.DataFrame(columns=['Date', 'Peak', 'Order'], data=peaks)
 
     return peaks
@@ -262,7 +268,7 @@ if __name__ == "__main__":
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
     df['Date'] = pd.to_datetime(df['Date'])
-    df = df[(df['Date'] > '2024-07-08 00:00:01') & (df['Date'] < '2024-07-09 23:59:59')]
+    df = df[(df['Date'] > '2024-07-08 00:06:01') & (df['Date'] < '2024-07-09 23:59:59')]
     mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
              datetime_format='%H:%M:%S')
 
@@ -288,7 +294,7 @@ if __name__ == "__main__":
             trader.show_stats()
 
         total_reversals = check_reversal(df.loc[idx-(max_window_width): idx])
-
+        ps_ = None
         for i in range(min_window_width, max_window_width, 1):
             candles_range = df.loc[idx - i:idx].copy()
             peaks = total_reversals[total_reversals['Date'].isin(candles_range['Date'])]
@@ -299,7 +305,8 @@ if __name__ == "__main__":
 
             if found:
                 max_window_size = i
-
+            if i == max_window_width - 1:
+                ps_ = peaks
         if max_window_size != 0:
             candles_range = df.loc[idx - max_window_size:idx].copy()
             peaks = total_reversals[total_reversals['Order'].isin(candles_range['Order'])]
@@ -318,12 +325,11 @@ if __name__ == "__main__":
                 last_peak = grouped_peaks.iloc[-1]
                 opened_trade = None
 
-                long_entry = current_candle['Close'] + (0.2 * (mean_top - mean_bottom))
-                short_entry = current_candle['Close'] - (0.2 * (mean_top - mean_bottom))
+                long_entry = current_candle['Close'] + (0.1 * abs(current_candle['Close'] - top_border_min))
+                short_entry = current_candle['Close'] - (0.1 * abs(current_candle['Close'] - bottom_border_max))
 
-                sl_long = long_entry - (top_border_max - top_border_min)
-                sl_short = short_entry + (top_border_max - top_border_min)
-
+                sl_long = current_candle['Close'] - (top_border_max - top_border_min)
+                sl_short = current_candle['Close'] + (top_border_max - top_border_min)
                 if previous_consolidation_peak is None:
                     # print(last_peak['Half'], previous_consolidation_peak)
                     show = True

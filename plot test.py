@@ -6,12 +6,12 @@ df = pd.read_csv('BTCUSDT-3s-2024-07.csv', index_col=0)
 # df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
 df['Date'] = pd.to_datetime(df['Date'])
-df = df[(df['Date'] >= '2024-07-08 15:48:33') & (df['Date'] <= '2024-07-08 15:50:51')]
+df = df[(df['Date'] > '2024-07-08 00:11:18') & (df['Date'] <= '2024-07-08 00:12:24')]
 df['Order'] = range(len(df))
 
 candles_range = df.copy()
-mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', ylabel='Price',
-         datetime_format='%H:%M:%S', show_nontrading=True)
+# mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', ylabel='Price',
+#          datetime_format='%H:%M:%S', show_nontrading=True)
 peaks = check_reversal(candles_range)
 
 candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
