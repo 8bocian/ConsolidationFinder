@@ -23,7 +23,7 @@ if not os.path.exists(directory):
     os.makedirs(directory)
 
 def check_reversal(candles_range):
-    candles_range = candles_range[(candles_range['High'] - candles_range['Low']) > 1]
+    candles_range = candles_range[abs(candles_range['Open'] - candles_range['Close']) >= 1]
 
     peaks = []
     is_previous_green = None
@@ -54,22 +54,6 @@ def get_extreme_row(group):
     return group.loc[group['Peak'].idxmax()] if group['Half'].iloc[0] else group.loc[group['Peak'].idxmin()]
 
 
-def total_deviation(values, allowed_percentage):
-    mean = np.mean(values)
-    deviations = np.abs(values - mean)
-    sum_of_deviations = np.sum(deviations)
-    sum_of_data_values = np.sum(values)
-    allowed_max_deviation_sum = (allowed_percentage / 100) * sum_of_data_values
-    return sum_of_deviations <= allowed_max_deviation_sum
-
-
-def max_deviation(values):
-    mean = np.mean(values)
-    deviations = np.abs(values - mean)
-    max_deviation_percent = (np.max(deviations) / mean) * 100
-    return max_deviation_percent, mean
-
-
 def values_in_range(values, lower_border, upper_border):
     for value in values:
         if not (lower_border <= value <= upper_border):
@@ -79,7 +63,6 @@ def values_in_range(values, lower_border, upper_border):
 
 def detect_consolidation(peaks):
     found = False
-    # peaks = check_reversal(candles_range)
     top = peaks['Peak'].max()
     bottom = peaks['Peak'].min()
     midpoint = (top + bottom) / 2
@@ -121,14 +104,6 @@ def detect_consolidation(peaks):
     bottom_border_min = mean_bottom * (1 - (g / 100))
     bottom_border_max = mean_bottom * (1 + (g / 100))
 
-    # total_length = len(candles_range)
-
-    # tops_range = total_length * 1 / len(tops)
-    # bottoms_range = total_length * 1 / len(bottoms)
-
-    # tops_ranges = [idx * tops_range <= top <= (idx + 1) * tops_range for idx, top in enumerate(tops['Order'])]
-    # bottoms_ranges = [idx * bottoms_range <= bottom <= (idx + 1) * bottoms_range for idx, bottom in enumerate(bottoms['Order'])]
-    # all(tops_ranges) and all(bottoms_ranges) and
     if len(tops) + len(bottoms) > 4 \
             and \
             values_in_range(tops['Peak'],
@@ -139,15 +114,6 @@ def detect_consolidation(peaks):
                             bottom_border_min,
                             bottom_border_max):
         found = True
-    # print(all(tops_ranges), all(bottoms_ranges), len(tops) + len(bottoms) > 5
-    #         ,
-    #         values_in_range(tops['Peak'],
-    #                         top_border_min,
-    #                         top_border_max)
-    #         ,
-    #         values_in_range(bottoms['Peak'],
-    #                         bottom_border_min,
-    #                         bottom_border_max))
     return grouped_peaks, found, \
            bottom_border_min, mean_bottom, bottom_border_max, \
            top_border_min, mean_top, top_border_max
@@ -223,7 +189,7 @@ class Trade:
         self.is_open = False
         self.is_in_game = False
 
-class Trader:
+class TraderMock:
     def __init__(self):
         self.trades = []
         self.trades_history = []
@@ -259,8 +225,10 @@ class Trader:
         new_trade = Trade(entry_price, stop_loss, take_profit, date)
         self.trades.append(new_trade)
         return new_trade
+
+
 if __name__ == "__main__":
-    trader = Trader()
+    trader = TraderMock()
 
     df = pd.read_csv('BTCUSDT-3s-2024-07.csv', index_col=0)
     # print(df)
@@ -273,12 +241,12 @@ if __name__ == "__main__":
              datetime_format='%H:%M:%S')
 
     max_window_width = 2 * 60
-    min_window_width = 10#10
+    min_window_width = 10
 
     df.reset_index(inplace=True)
     df['Order'] = range(len(df))
     previous_consolidation_peak = None
-    for idx in range(max_window_width - 1, len(df), 1):
+    for idx in range(len(df)):
         current_candle = df.loc[idx]
         start_date = current_candle['Date'].to_pydatetime()
         if start_date.second == 0:
@@ -294,7 +262,6 @@ if __name__ == "__main__":
             trader.show_stats()
 
         total_reversals = check_reversal(df.loc[idx-(max_window_width): idx])
-        ps_ = None
         for i in range(min_window_width, max_window_width, 1):
             candles_range = df.loc[idx - i:idx].copy()
             peaks = total_reversals[total_reversals['Date'].isin(candles_range['Date'])]
@@ -305,8 +272,6 @@ if __name__ == "__main__":
 
             if found:
                 max_window_size = i
-            if i == max_window_width - 1:
-                ps_ = peaks
         if max_window_size != 0:
             candles_range = df.loc[idx - max_window_size:idx].copy()
             peaks = total_reversals[total_reversals['Order'].isin(candles_range['Order'])]
@@ -316,10 +281,6 @@ if __name__ == "__main__":
             grouped_peaks, found, \
             bottom_border_min, mean_bottom, bottom_border_max, \
             top_border_min, mean_top, top_border_max = detect_consolidation(peaks)
-
-
-
-            #CHECK IF FOUND CONSECUTIVE CONSOLIDATIONS, IF ARE CONSECUTIVE CHECK IF THE PEAK IS TOP OR BOTTOM, IF IS THE SAME AS PREVIOUS THEN DO NOTHING ELSE OPEN A TRADE
 
             if found:
                 last_peak = grouped_peaks.iloc[-1]
@@ -331,10 +292,7 @@ if __name__ == "__main__":
                 sl_long = current_candle['Close'] - (top_border_max - top_border_min)
                 sl_short = current_candle['Close'] + (top_border_max - top_border_min)
                 if previous_consolidation_peak is None:
-                    # print(last_peak['Half'], previous_consolidation_peak)
                     show = True
-                    # DO A TRADE
-                    # ENTRY PRICE IS TOP MID BOTTOM OF CHANNEL?
                     if last_peak['Half']:
                         opened_trade = trader.open_trade(entry_price=short_entry, stop_loss=sl_short, take_profit=bottom_border_max, date=start_date)
                     else:
@@ -370,15 +328,9 @@ if __name__ == "__main__":
 
                         plt.show()
 
-                    # plt.cla()
-                    # plt.clf()
                 previous_consolidation_peak = last_peak
 
-                # print(previous_consolidation_peak)
             else:
                 previous_consolidation_peak = None
         else:
             trader.cancel_unopened_trades(start_date)
-            # print(f"CLOSING {start_date}")
-            ...
-
