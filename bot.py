@@ -1,7 +1,7 @@
 import copy
 import datetime
+import os
 import time
-
 import binance
 import numpy as np
 import websockets
@@ -19,6 +19,12 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", message="some specific warning message")
 
 warnings.filterwarnings("ignore")
+directory = "trades"
+
+# Check if the directory exists
+if not os.path.exists(directory):
+    # Create the directory
+    os.makedirs(directory)
 
 
 def values_in_range(values, lower_border, upper_border):

@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", message="some specific warning message")
 
 warnings.filterwarnings("ignore")
-directory = "consolidations_new"
+directory = "trades"
 
 # Check if the directory exists
 if not os.path.exists(directory):
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
 
     df['Date'] = pd.to_datetime(df['Date'])
-    df = df[(df['Date'] > '2024-07-08 00:06:01') & (df['Date'] < '2024-07-09 23:59:59')]
+    df = df[(df['Date'] > '2024-07-11 00:06:01') & (df['Date'] < '2024-07-13 23:59:59')]
     mpf.plot(df.set_index('Date'), type='candle', style='charles', title='BTC Candlestick Chart', ylabel='Price',
              datetime_format='%H:%M:%S')
 
