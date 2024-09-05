@@ -11,19 +11,16 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import mplfinance as mpf
 import warnings
+from binance_api import BinanceApi
 
-# Suppress a specific warning category
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+BASE_URL = "https://fapi.binance.com"#"https://testnet.binancefuture.com"
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 
-# Suppress warnings with a specific message
-warnings.filterwarnings("ignore", message="some specific warning message")
 
 warnings.filterwarnings("ignore")
 directory = "trades"
-
-# Check if the directory exists
 if not os.path.exists(directory):
-    # Create the directory
     os.makedirs(directory)
 
 
@@ -54,9 +51,10 @@ class Trade:
         self.is_profit = None
 
 
-class Trader:
-    def __init__(self):
+class Trader():
+    def __init__(self, binance_api):
         self.trades = []
+        self.binance_api = binance_api
 
     def open_trade(self, entry_price, stop_loss, take_profit, date):
         # self.cancel_unopened_trades()
@@ -147,12 +145,18 @@ class Trader:
     async def run(self, pair):
         url = f"wss://fstream.binance.com/ws/{pair}@markPrice@1s"
 
+        with open("test.csv", "w") as file:
+            pass
+        file = open("test.csv", "a")
         candles_range = pd.DataFrame(columns=['Date', 'Open', 'Close'])
         current_candle = None
+
+        file.write(','.join(candles_range.columns) + "\n")
+
         timer = 0
         max_window_width = 120
         min_window_width = 10
-
+        previous_consolidation_peak = None
         async with websockets.connect(url) as ws:
             print("RECEIVING DATA")
             while True:
@@ -170,7 +174,9 @@ class Trader:
                     current_candle['Close'] = price
                     current_candle['Date'] = date
                     new_row = pd.DataFrame([current_candle])
-
+                    file.write(
+                        f"{date},{current_candle['Open']},{price}\n"
+                    )
                     candles_range = pd.concat([candles_range, new_row], ignore_index=True)
                     if len(candles_range) > max_window_width:
                         candles_range = candles_range.iloc[-max_window_width:]
@@ -233,6 +239,10 @@ class Trader:
                                 if opened_trade is not None:
                                     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
+                                    candles_range[['High', 'Low']] = [
+                                        [open_price, close_price] if open_price > close_price else [close_price,
+                                                                                                    open_price] for
+                                        idx, (close_price, open_price) in candles_range[['Close', 'Open']].iterrows()]
                                     mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles',
                                              ylabel='Price',
                                              datetime_format='%H:%M:%S', ax=ax1, show_nontrading=True)
@@ -263,7 +273,13 @@ class Trader:
                     current_candle = None
 
 if __name__ == "__main__":
-    trader = Trader()
-    pair = 'btcusdt'
+    binance_api = BinanceApi(
+        base_url="https://fapi.binance.com",
+        binance_api_key=os.getenv("BINANCE_API_KEY"),
+        binance_api_secret=os.getenv("BINANCE_API_SECRET")
+    )
+    trader = Trader(binance_api=binance_api)
+
+    pair = 'BTCUSDT'
     asyncio.get_event_loop().run_until_complete(trader.run(pair))
 
