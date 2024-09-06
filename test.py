@@ -31,16 +31,12 @@ def check_reversal(candles_range):
     previous_candle = None
     for idx, candle in candles_range.iterrows():
         is_current_green = candle['Close'] > candle['Open']
-        T = 0
         if is_previous_green != is_current_green and is_previous_green is not None:
             peaks.append((previous_candle['Date'], candle['Open'], previous_candle['Order']))
-            T += 1
         if is_previous_green is None:
             peaks.append((candle['Date'], candle['Open'], candle['Order']))
-            T += 1
         if idx == len(candles_range) - 1:
             peaks.append((candle['Date'], candle['Close'], candle['Order']))
-            T += 1
 
 
         is_previous_green = is_current_green
@@ -61,7 +57,7 @@ def values_in_range(values, lower_border, upper_border):
     return True
 
 
-def detect_consolidation(peaks):
+def detect_consolidation(peaks, peaks_threshold=4):
     found = False
     top = peaks['Peak'].max()
     bottom = peaks['Peak'].min()
@@ -74,15 +70,16 @@ def detect_consolidation(peaks):
     bottom_border = midpoint - (diff * middle_threshold)
 
     peaks = peaks[(peaks['Peak'] >= top_border) | (peaks['Peak'] <= bottom_border)]
+
+    if len(peaks) <= peaks_threshold:
+        return None, found, \
+           None, None, None, \
+           None, None, None
+
     peaks['Half'] = peaks['Peak'] >= midpoint
     peaks['Group'] = (peaks['Half'] != peaks['Half'].shift()).cumsum()
     grouped_peaks = peaks.groupby(['Group']).apply(get_extreme_row).reset_index(drop=True)
     grouped_peaks = grouped_peaks.drop(columns=["Group"])
-
-    # if len(grouped_peaks) <= 4:
-    #     return None, found, \
-    #        None, None, None, \
-    #        None, None, None
 
     tops = grouped_peaks[grouped_peaks['Half'] == True]
     bottoms = grouped_peaks[grouped_peaks['Half'] == False]
@@ -104,7 +101,7 @@ def detect_consolidation(peaks):
     bottom_border_min = mean_bottom * (1 - (g / 100))
     bottom_border_max = mean_bottom * (1 + (g / 100))
 
-    if len(tops) + len(bottoms) > 4 \
+    if len(tops) + len(bottoms) > peaks_threshold \
             and \
             values_in_range(tops['Peak'],
                             top_border_min,
@@ -255,32 +252,53 @@ if __name__ == "__main__":
 
         show = False
         max_window_size = 0
-
+        saved_ = None
         is_change = trader.check_trade(current_candle)
         if is_change:
             show = True
             trader.show_stats()
 
         total_reversals = check_reversal(df.loc[idx-(max_window_width): idx])
+        t_diff = 0
+        t = time.time()
+        l = 0
+
         for i in range(min_window_width, max_window_width, 1):
             candles_range = df.loc[idx - i:idx].copy()
             peaks = total_reversals[total_reversals['Date'].isin(candles_range['Date'])]
 
+            t_d = time.time()
             grouped_peaks, found, \
             bottom_border_min, mean_bottom, bottom_border_max, \
             top_border_min, mean_top, top_border_max = detect_consolidation(peaks)
-
+            l += len(peaks)
+            t_diff += time.time() - t_d
+            # if l > 1000:
+            #     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+            #
+            #     mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', ylabel='Price',
+            #              datetime_format='%H:%M:%S', ax=ax1, show_nontrading=True)
+            #
+            #     ax2.plot(peaks['Date'], peaks['Peak'])
+            #     print(len(peaks))
+            #     fig.suptitle('BTC Candlestick Chart and Peak Analysis')
+            #
+            #     plt.tight_layout()
+            #     plt.show()
+            #     quit()
             if found:
+                saved_ = (
+                    grouped_peaks, found, bottom_border_min, mean_bottom,
+                    bottom_border_max, top_border_min, mean_top, top_border_max,
+                    candles_range, peaks
+                )
                 max_window_size = i
+        print("PEAKS: ", l, t_diff)
         if max_window_size != 0:
-            candles_range = df.loc[idx - max_window_size:idx].copy()
-            peaks = total_reversals[total_reversals['Order'].isin(candles_range['Order'])]
 
-            candles_range.reset_index(inplace=True)
-
-            grouped_peaks, found, \
-            bottom_border_min, mean_bottom, bottom_border_max, \
-            top_border_min, mean_top, top_border_max = detect_consolidation(peaks)
+            grouped_peaks, found, bottom_border_min, mean_bottom, \
+            bottom_border_max, top_border_min, mean_top, \
+            top_border_max, candles_range, peaks = saved_
 
             if found:
                 last_peak = grouped_peaks.iloc[-1]
@@ -304,29 +322,29 @@ if __name__ == "__main__":
                             opened_trade = trader.open_trade(entry_price=short_entry, stop_loss=sl_short, take_profit=bottom_border_max, date=start_date)
                         else:
                             opened_trade = trader.open_trade(entry_price=long_entry, stop_loss=sl_long, take_profit=top_border_min, date=start_date)
-                if opened_trade is not None:
-                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-
-                    mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', ylabel='Price',
-                             datetime_format='%H:%M:%S', ax=ax1, show_nontrading=True)
-
-                    ax2.fill_between(grouped_peaks['Date'], top_border_max,
-                                     top_border_min, color='blue', alpha=0.3)
-                    ax2.fill_between(grouped_peaks['Date'], bottom_border_max,
-                                     bottom_border_min, color='red', alpha=0.3)
-
-                    ax2.axhline(mean_top, color='blue')
-                    ax2.axhline(mean_bottom, color='red')
-
-                    ax2.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
-
-                    fig.suptitle('BTC Candlestick Chart and Peak Analysis')
-
-                    plt.tight_layout()
-                    plt.savefig(f'trades/{str(opened_trade.open_date).replace(":", "-")} {max_window_size} {opened_trade.type} {opened_trade.entry_price}.png')
-                    if show and False:
-
-                        plt.show()
+                # if opened_trade is not None:
+                #     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+                #
+                #     mpf.plot(candles_range[::-1].set_index('Date'), type='candle', style='charles', ylabel='Price',
+                #              datetime_format='%H:%M:%S', ax=ax1, show_nontrading=True)
+                #
+                #     ax2.fill_between(grouped_peaks['Date'], top_border_max,
+                #                      top_border_min, color='blue', alpha=0.3)
+                #     ax2.fill_between(grouped_peaks['Date'], bottom_border_max,
+                #                      bottom_border_min, color='red', alpha=0.3)
+                #
+                #     ax2.axhline(mean_top, color='blue')
+                #     ax2.axhline(mean_bottom, color='red')
+                #
+                #     ax2.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
+                #
+                #     fig.suptitle('BTC Candlestick Chart and Peak Analysis')
+                #
+                #     plt.tight_layout()
+                #     plt.savefig(f'trades/{str(opened_trade.open_date).replace(":", "-")} {max_window_size} {opened_trade.type} {opened_trade.entry_price}.png')
+                #     if show and False:
+                #
+                #         plt.show()
 
                 previous_consolidation_peak = last_peak
 
@@ -334,3 +352,4 @@ if __name__ == "__main__":
                 previous_consolidation_peak = None
         else:
             trader.cancel_unopened_trades(start_date)
+        print(start_date, time.time() - t)
