@@ -19,6 +19,8 @@ class BinanceApi():
         self._binance_api_key = binance_api_key
         self._binance_api_private_key = binance_api_private_key
         self._binance_ws_key = binance_ws_key
+        self.leverage = 1
+        self.opened_trades = []
 
         with open(binance_ws_private_key_path, 'rb') as f:
             self._binance_ws_private_key = load_pem_private_key(data=f.read(),
@@ -43,6 +45,7 @@ class BinanceApi():
             print("Logged in ")
         else:
             print("Failed to log in")
+            print(result)
 
     def signature_ws(self, payload):
         payload = '&'.join([f'{param}={value}' for param, value in sorted(payload.items())])
@@ -68,6 +71,7 @@ class BinanceApi():
         }
 
         response = requests.post(f'{self.api_base_url}/fapi/v1/leverage', headers=headers, params=params)
+        self.leverage = leverage
         return response.json()
 
     def place_limit_order(self, symbol, side, quantity, price):
@@ -91,9 +95,7 @@ class BinanceApi():
 
         self.ws.send(json.dumps(body_order))
         response = json.loads(self.ws.recv())
-        update_time = int(response['result']['updateTime']) / 1000
-        took = time.time() - update_time
-        return took
+        return response
 
 
     def place_stop_order(self, symbol, side, type, quantity, stop_price):
@@ -117,11 +119,62 @@ class BinanceApi():
         # body_stop_loss['params']['signature'] = self.signature_ws(body_stop_loss['params'])
         self.ws.send(json.dumps(body_stop_loss))
         response_stop_order = json.loads(self.ws.recv())
-        update_time = int(response_stop_order['result']['updateTime']) / 1000
-        took = time.time() - update_time
-        return took
+        return response_stop_order
 
-    def trade_with_leverage(self, symbol, side, quantity, price, stop_loss_price, take_profit_price):
+    def cancel_order(self, orderId):
+        body_cancel_order = {
+            "id": "90",
+            "method": "order.cancel",
+            "params": {
+                "orderId": orderId,
+                "symbol": "BTCUSDT",
+                "timestamp": int(time.time() * 1000)
+            }
+        }
+
+        self.ws.send(json.dumps(body_cancel_order))
+        response_stop_order = json.loads(self.ws.recv())
+        return response_stop_order
+
+    def close_order(self, order):
+        close_side = 'SELL' if order['result']['side'] == 'BUY' else 'BUY'
+        print(order)
+        body_close_order = {
+            "id": "91",
+            "method": "order.place",
+            "params": {
+                'symbol': order['result']['symbol'],
+                'side': close_side,
+                'type': 'MARKET',
+                'quantity': order['result']['origQty'],
+                'workingType': "MARK_PRICE",
+                'timestamp': int(time.time() * 1000),
+            }
+        }
+
+        self.ws.send(json.dumps(body_close_order))
+        response_stop_order = json.loads(self.ws.recv())
+        return response_stop_order
+
+    def cancel_all_orders(self, orders_=None):
+        if orders_ is None:
+            orders_ = self.opened_trades
+        with ThreadPoolExecutor() as executor:
+            futures = []
+            for orders in orders_:
+                for order in orders:
+                    order_id = order['result']['orderId']
+                    futures.append(executor.submit(self.cancel_order, order_id))
+
+                    if order['result']['type'] == "LIMIT":
+                        futures.append(executor.submit(self.close_order, order))
+
+            for future in futures:
+                future.result()
+        self.opened_trades = []
+
+    def trade(self, symbol, side, quantity, price, stop_loss_price, take_profit_price):
+
         def run_limit_order():
             return self.place_limit_order(symbol, side, quantity, price)
 
@@ -131,16 +184,26 @@ class BinanceApi():
         def run_take_profit():
             return self.place_stop_order(symbol=symbol, side=side, type='TAKE_PROFIT_MARKET', quantity=quantity, stop_price=take_profit_price)
 
+        def run_cancel_all_orders():
+            return self.cancel_all_orders()
+
         t = time.time()
         with ThreadPoolExecutor(max_workers=3) as executor:
-
+            run_cancel_all_orders_future = executor.submit(run_cancel_all_orders)
             limit_order_future = executor.submit(run_limit_order)
             stop_loss_future = executor.submit(run_stop_loss)
             take_profit_future = executor.submit(run_take_profit)
 
+            orders = [
+                limit_order_future.result(),
+                stop_loss_future.result(),
+                take_profit_future.result()
+            ]
+            if not all([str(order['status'])[0] == "2" for order in orders]):
+                self.cancel_all_orders(orders)
+            else:
+                self.opened_trades.append(orders)
         print(time.time() - t)
-
-
 def main():
     binance_api = BinanceApi(
         binance_api_key=os.getenv("BINANCE_API_KEY"),
@@ -151,8 +214,9 @@ def main():
 
     symbol = "BTCUSDT"
 
-    binance_api.set_leverage(symbol, 10)
-    binance_api.trade_with_leverage(symbol, "SELL", 0.002, 59000, 59200, 51000)
-
+    # binance_api.set_leverage(symbol, 100)
+    # print(10 * 100 / 53000)
+    # binance_api.trade(symbol, "BUY", 0.002, 53820, 50500, 59000)
+    # binance_api.cancel_all_orders()
 if __name__ == "__main__":
     main()

@@ -15,10 +15,6 @@ import mplfinance as mpf
 import warnings
 from binance_api import BinanceApi
 
-BASE_URL = "https://fapi.binance.com"#"https://testnet.binancefuture.com"
-BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
-
 
 warnings.filterwarnings("ignore")
 directory = "trades"
@@ -54,18 +50,19 @@ class Trade:
 
 
 class Trader():
-    def __init__(self, binance_api, price_file="test.csv"):
+    def __init__(self, binance_api, symbol="BTCUSDT", dollars_per_trade=5, price_file="test.csv"):
         self.trades = []
         self.binance_api = binance_api
         self.price_saver = ThreadPoolExecutor(max_workers=1)
         self.price_file = price_file
+        self.dollars_per_trade = dollars_per_trade
+        self.symbol = symbol
 
-
-    def open_trade(self, entry_price, stop_loss, take_profit, date):
+    def open_trade(self, entry_price, stop_loss, take_profit, quantity, side, price):
         # self.cancel_unopened_trades()
-        new_trade = Trade(entry_price, stop_loss, take_profit, date)
-        self.trades.append(new_trade)
-        return new_trade
+        print(f"{side} TRADE OPENED AT {entry_price}, {price} ")
+        self.binance_api.trade(symbol=self.symbol, side=side, quantity=round(quantity, 3), price=round(entry_price, 1), stop_loss_price=round(stop_loss, 1), take_profit_price=round(take_profit, 1))
+
 
     def detect_consolidation(self, peaks):
         found = False
@@ -81,6 +78,8 @@ class Trader():
         bottom_border = midpoint - (diff * middle_threshold)
 
         peaks = peaks[(peaks['Peak'] >= top_border) | (peaks['Peak'] <= bottom_border)]
+        if len(peaks) <= 4:
+            return None, False, None, None, None, None, None, None
         peaks['Half'] = peaks['Peak'] >= midpoint
         peaks['Group'] = (peaks['Half'] != peaks['Half'].shift()).cumsum()
         grouped_peaks = peaks.groupby(['Group']).apply(get_extreme_row).reset_index(drop=True)
@@ -101,7 +100,7 @@ class Trader():
         bottom_border_min = mean_bottom * (1 - (g / 100))
         bottom_border_max = mean_bottom * (1 + (g / 100))
 
-        if values_in_range(
+        if len(tops) + len(bottoms) > 4 and values_in_range(
                 tops['Peak'],
                 top_border_min,
                 top_border_max) \
@@ -143,8 +142,7 @@ class Trader():
             f.write(candle['Date'] + "," + candle['Open'] + "," + candle['Close'])
 
     async def run(self, pair):
-        url = f"wss://fstream.binance.com/ws/{pair}@markPrice@1s"
-
+        url = f"wss://fstream.binance.com/ws/{pair.lower()}@markPrice@1s"
         with open(self.price_file, "w") as file:
             pass
         file = open(self.price_file, "a")
@@ -157,7 +155,6 @@ class Trader():
         max_window_width = 120
         min_window_width = 10
         previous_consolidation_peak = None
-        peaks_threshold = 4
 
         async with websockets.connect(url) as ws:
             print("RECEIVING DATA")
@@ -166,7 +163,6 @@ class Trader():
                 data = json.loads(message)
                 price = float(data['p'])
                 date = datetime.datetime.fromtimestamp(data['E']/1000)
-                print("WS", date)
                 timer += 1
                 if current_candle is None:
                     current_candle = {"Open": price}
@@ -174,7 +170,7 @@ class Trader():
                     timer = 0
                     current_candle['Close'] = price
                     current_candle['Date'] = date
-                    new_row = pd.DataFrame([current_candle]).jedrzej.to.moj.ulubiony.kolega
+                    new_row = pd.DataFrame([current_candle])
 
 
                     candles_range = pd.concat([candles_range, new_row], ignore_index=True)
@@ -188,18 +184,15 @@ class Trader():
                         start_date = copy.copy(date)
                         candles_range['Order'] = range(len(candles_range))
                         total_reversals = self.detect_peaks(candles_range)
-                        t = time.time()
-                        print(start_date)
+                        print(start_date, current_candle['Close'])
                         for i in range(min_window_width, len(candles_range), 1):
                             candles_sub_range = candles_range[-i:]
 
                             peaks = total_reversals[total_reversals['Date'].isin(candles_sub_range['Date'])]
-                            if len(peaks) > peaks_threshold:
-                                grouped_peaks, found, \
-                                bottom_border_min, mean_bottom, bottom_border_max, \
-                                top_border_min, mean_top, top_border_max = self.detect_consolidation(peaks)
-                            else:
-                                found = False
+                            grouped_peaks, found, \
+                            bottom_border_min, mean_bottom, bottom_border_max, \
+                            top_border_min, mean_top, top_border_max = self.detect_consolidation(peaks)
+
                             if found:
                                 saved = (
                                     grouped_peaks, found, bottom_border_min, mean_bottom, bottom_border_max,
@@ -213,78 +206,80 @@ class Trader():
 
                             if found:
                                 last_peak = grouped_peaks.iloc[-1]
-                                opened_trade = None
 
                                 long_entry = current_candle['Close'] + (0.1 * abs(current_candle['Close'] - top_border_min))
                                 short_entry = current_candle['Close'] - (0.1 * abs(current_candle['Close'] - bottom_border_max))
 
                                 sl_long = current_candle['Close'] - (top_border_max - top_border_min)
                                 sl_short = current_candle['Close'] + (top_border_max - top_border_min)
+                                short_trade_quantity = self.dollars_per_trade * self.binance_api.leverage / short_entry
+                                long_trade_quantity = self.dollars_per_trade * self.binance_api.leverage / long_entry
+
                                 if previous_consolidation_peak is None:
-                                    show = True
                                     if last_peak['Half']:
-                                        opened_trade = self.open_trade(entry_price=short_entry, stop_loss=sl_short,
-                                                                         take_profit=bottom_border_max, date=start_date)
+                                        self.open_trade(entry_price=short_entry, stop_loss=sl_short,
+                                                        take_profit=bottom_border_max, quantity=short_trade_quantity, side="SELL", price=current_candle['Close'])
                                     else:
-                                        opened_trade = self.open_trade(entry_price=long_entry, stop_loss=sl_long,
-                                                                         take_profit=top_border_min, date=start_date)
+                                        self.open_trade(entry_price=long_entry, stop_loss=sl_long,
+                                                        take_profit=top_border_min, quantity=long_trade_quantity, side="BUY", price=current_candle['Close'])
                                 else:
                                     if previous_consolidation_peak['Half'] != last_peak['Half']:
-                                        show = True
                                         if last_peak['Half']:
-                                            opened_trade = self.open_trade(entry_price=short_entry, stop_loss=sl_short,
-                                                                             take_profit=bottom_border_max, date=start_date)
+                                            self.open_trade(entry_price=short_entry, stop_loss=sl_short,
+                                                            take_profit=bottom_border_max, quantity=short_trade_quantity, side="SELL", price=current_candle['Close'])
                                         else:
-                                            opened_trade = self.open_trade(entry_price=long_entry, stop_loss=sl_long,
-                                                                             take_profit=top_border_min, date=start_date)
-                                # if opened_trade is not None:
+                                            self.open_trade(entry_price=long_entry, stop_loss=sl_long,
+                                                            take_profit=top_border_min, quantity=long_trade_quantity, side="BUY", price=current_candle['Close'])
+                                if found:
 
-                                    # fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-                                    #
-                                    # candles_sub_range[['High', 'Low']] = [
-                                    #     [open_price, close_price] if open_price > close_price else [close_price,
-                                    #                                                                 open_price] for
-                                    #     idx, (close_price, open_price) in candles_sub_range[['Close', 'Open']].iterrows()]
-                                    # mpf.plot(candles_sub_range[::-1].set_index('Date'), type='candle', style='charles',
-                                    #          ylabel='Price',
-                                    #          datetime_format='%H:%M:%S', ax=ax1, show_nontrading=True)
-                                    #
-                                    # ax2.fill_between(grouped_peaks['Date'], top_border_max,
-                                    #                  top_border_min, color='blue', alpha=0.3)
-                                    # ax2.fill_between(grouped_peaks['Date'], bottom_border_max,
-                                    #                  bottom_border_min, color='red', alpha=0.3)
-                                    #
-                                    # ax2.axhline(mean_top, color='blue')
-                                    # ax2.axhline(mean_bottom, color='red')
-                                    #
-                                    # ax2.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
-                                    #
-                                    # fig.suptitle('BTC Candlestick Chart and Peak Analysis')
-                                    #
-                                    # plt.tight_layout()
-                                    # plt.savefig(
-                                    #     f'trades/{str(opened_trade.open_date).replace(":", "-")} {opened_trade.type} {opened_trade.entry_price}.png')
+                                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+                                    candles_sub_range[['High', 'Low']] = [
+                                        [open_price, close_price] if open_price > close_price else [close_price,
+                                                                                                    open_price] for
+                                        idx, (close_price, open_price) in candles_sub_range[['Close', 'Open']].iterrows()]
+                                    mpf.plot(candles_sub_range[::-1].set_index('Date'), type='candle', style='charles',
+                                             ylabel='Price',
+                                             datetime_format='%H:%M:%S', ax=ax1, show_nontrading=True)
+
+                                    ax2.fill_between(grouped_peaks['Date'], top_border_max,
+                                                     top_border_min, color='blue', alpha=0.3)
+                                    ax2.fill_between(grouped_peaks['Date'], bottom_border_max,
+                                                     bottom_border_min, color='red', alpha=0.3)
+
+                                    ax2.axhline(mean_top, color='blue')
+                                    ax2.axhline(mean_bottom, color='red')
+
+                                    ax2.plot(grouped_peaks['Date'], grouped_peaks['Peak'])
+
+                                    fig.suptitle('BTC Candlestick Chart and Peak Analysis')
+
+                                    plt.tight_layout()
+                                    plt.savefig(
+                                        f'trades/{current_candle["Close"]}_{str(current_candle["Date"]).replace(":", "-").replace(" ", "_")}.png')
 
                                 previous_consolidation_peak = last_peak
 
                             else:
                                 previous_consolidation_peak = None
                         else:
-                            ...
-                            # candel unopened trades?
-                        print(start_date, " took: ", time.time() - t)
+                            try:
+                                self.binance_api.cancel_all_orders()
+                            except:
+                                quit()
                     asyncio.get_event_loop().run_in_executor(self.price_saver, self.save_candle_to_file, current_candle)
                     current_candle = None
 
 if __name__ == "__main__":
-    # binance_api = BinanceApi(
-    #     binance_api_key=os.getenv("BINANCE_API_KEY"),
-    #     binance_api_private_key=os.getenv("BINANCE_API_SECRET"),
-    #     binance_ws_key=os.getenv("BINANCE_API_KEY_WS"),
-    #     binance_ws_private_key_path="Private_key.pem"
-    # )
-    trader = Trader(binance_api=None)
-
     pair = 'BTCUSDT'
+    binance_api = BinanceApi(
+        binance_api_key=os.getenv("BINANCE_API_KEY"),
+        binance_api_private_key=os.getenv("BINANCE_API_SECRET"),
+        binance_ws_key=os.getenv("BINANCE_API_KEY_WS"),
+        binance_ws_private_key_path="Private_key.pem"
+    )
+    binance_api.set_leverage(symbol=pair, leverage=100)
+    trader = Trader(binance_api=binance_api, dollars_per_trade=10)
+
     asyncio.get_event_loop().run_until_complete(trader.run(pair))
 
